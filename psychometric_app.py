@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
 
-# Load data
-questions_df = pd.read_csv("questions_set.csv")
-answers_df = pd.read_csv("answers_set.csv")
-stem_df = pd.read_csv("stem_set.csv")
-humanities_df = pd.read_csv("humanities_set.csv")
-arts_df = pd.read_csv("arts_set.csv")
+@st.cache_data
+def load_data():
+    return (
+        pd.read_csv("questions_set.csv"),
+        pd.read_csv("answers_set.csv"),
+        pd.read_csv("stem_set.csv"),
+        pd.read_csv("humanities_set.csv"),
+        pd.read_csv("arts_set.csv"),
+    )
+questions_df, answers_df, stem_df, humanities_df, arts_df = load_data()
+
 
 # Define subject mapping for options
 option_subject_map = {
