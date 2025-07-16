@@ -1,102 +1,91 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-@st.cache_data
-def load_data():
-    return (
-        pd.read_csv("questions_set.csv"),
-        pd.read_csv("answers_set.csv"),
-        pd.read_csv("stem_set.csv"),
-        pd.read_csv("humanities_set.csv"),
-        pd.read_csv("arts_set.csv"),
-    )
-questions_df, answers_df, stem_df, humanities_df, arts_df = load_data()
+# Load files
+questions_df = pd.read_excel("questions_set.xlsx")
+scoring_df = pd.read_excel("scoring_set.xlsx")
+stem_df = pd.read_excel("stem_set.xlsx")
+arts_df = pd.read_excel("arts_set.xlsx")
+humanities_df = pd.read_excel("humanities_set.xlsx")
 
+st.set_page_config(page_title="Career Guidance Tool", layout="centered")
 
-# Define subject mapping for options
-option_subject_map = {
-    "Option A": "STEM",
-    "Option B": "Arts",
-    "Option C": "Humanities",
-    "Option D": "Humanities"
-}
+st.title("🎓 Career & Role Type Guidance")
+st.subheader("Step 1: Answer these questions to understand your preferences")
 
-# Load answer weights dictionary
-answer_weights = {}
-for _, row in answers_df.iterrows():
-    q_no = int(row["Q#"])
-    answer_weights[q_no] = {
-        "Option A": row["Option A Weights"],
-        "Option B": row["Option B Weights"],
-        "Option C": row["Option C Weights"],
-        "Option D": row["Option D Weights"]
-    }
-
-st.title("🎯 Psychometric Career Guidance Test")
-st.markdown("Answer the following questions to discover your ideal **career path**, **role type**, and **top subject inclination**.")
-
+# Store answers
 responses = {}
-with st.form("psychometric_form"):
-    for _, row in questions_df.iterrows():
-        qno = int(row["Q#"])
-        question = row["Question"]
-        options = {
-            "Option A": row["Option A"],
-            "Option B": row["Option B"],
-            "Option C": row["Option C"],
-            "Option D": row["Option D"]
-        }
-        answer = st.radio(f"**Q{qno}: {question}**", options.keys(), format_func=lambda x: options[x])
-        responses[qno] = answer
 
-    submitted = st.form_submit_button("Submit and Get My Career Report")
+# Render questions
+for idx, row in questions_df.iterrows():
+    question = row["Question"]
+    options = [row[f"Option {opt}"] for opt in ["A", "B", "C", "D"] if f"Option {opt}" in row]
+    selected = st.radio(question, options, key=idx)
+    responses[question] = selected
 
-if submitted:
-    # Initialize scoring
-    subject_scores = {"STEM": 0, "Humanities": 0, "Arts": 0}
-    role_type_scores = {}
-    career_line_scores = {}
+st.subheader("Step 2: Tell us your best 6 subjects & marks")
 
-    # Calculate scores
-    for qno, selected_option in responses.items():
-        subject = option_subject_map[selected_option]
-        subject_scores[subject] += 1
+subject_marks = []
+for i in range(6):
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        subject = st.text_input(f"Subject {i+1}", key=f"subject_{i}")
+    with col2:
+        marks = st.number_input(f"Marks", min_value=0, max_value=100, key=f"marks_{i}")
+    if subject:
+        subject_marks.append((subject.lower(), marks))
 
-        weight = answer_weights[qno][selected_option]
-        if isinstance(weight, str) and ":" in weight:
-            role_type, career_line = weight.split(":")
-            role_type_scores[role_type] = role_type_scores.get(role_type, 0) + 1
-            career_line_scores[career_line] = career_line_scores.get(career_line, 0) + 1
+def get_inclination(subject_marks):
+    stem_subjects = {"math", "physics", "chemistry", "biology", "cs", "computer science"}
+    arts_subjects = {"music", "painting", "fine arts", "drama", "dance"}
+    humanities_subjects = {"history", "geography", "political science", "sociology", "psychology", "economics", "english"}
 
-    # Determine top subject, role type, career line
-    top_subject = max(subject_scores, key=subject_scores.get)
-    top_role_type = max(role_type_scores, key=role_type_scores.get)
-    top_career_line = max(career_line_scores, key=career_line_scores.get)
+    scores = {"STEM": 0, "ARTS": 0, "HUMANITIES": 0}
 
-    st.subheader("🧭 Your Career Alignment Summary")
-    st.markdown(f"**Top Subject Inclination:** {top_subject}")
-    st.markdown(f"**Best Fit Role Type:** {top_role_type}")
-    st.markdown(f"**Ideal Career Line:** {top_career_line}")
+    for subj, marks in subject_marks:
+        if subj in stem_subjects:
+            scores["STEM"] += marks
+        elif subj in arts_subjects:
+            scores["ARTS"] += marks
+        elif subj in humanities_subjects:
+            scores["HUMANITIES"] += marks
 
-    # Pick right dataset
-    domain_df = {
-        "STEM": stem_df,
-        "Humanities": humanities_df,
-        "Arts": arts_df
-    }[top_subject]
+    return max(scores, key=scores.get)
 
-    result_row = domain_df[
-        (domain_df["Role Type"].str.lower() == top_role_type.lower()) &
-        (domain_df["Career Line"].str.lower() == top_career_line.lower())
-    ]
+# Score Calculation
+def calculate_scores(responses):
+    category_scores = {}
+    for question, answer in responses.items():
+        row = scoring_df[scoring_df["Question"] == question]
+        if not row.empty:
+            category = row.iloc[0]["Category"]
+            score = row.iloc[0][f"Weight {answer[-1]}"]  # Assuming Option A = last char A
+            category_scores[category] = category_scores.get(category, 0) + score
+    return category_scores
 
-    if not result_row.empty:
-        row = result_row.iloc[0]
-        st.success("🎉 Based on your inputs, here's your personalized guidance:")
-        st.markdown(f"**Example Career Options:** {row['Example Career Options']}")
-        st.markdown(f"**Entry-Level Designations:** {row['Entry-Level Designations']}")
-        st.markdown(f"**Message:** {row['Message']}")
-        st.markdown(f"**Top Universities (India & Abroad):** {row['Top Universities (India & Abroad)']}")
-        st.markdown(f"**Potential Companies to Aim For:** {row['Potential Companies to Aim For']}")
+if st.button("🔍 Generate Report"):
+    if len(subject_marks) < 6 or len(responses) < len(questions_df):
+        st.error("Please answer all questions and enter 6 subjects with marks.")
     else:
-        st.warning("No perfect match found for this combination. Please try again or revise mappings.")
+        inclination = get_inclination(subject_marks)
+        st.success(f"Your academic inclination: **{inclination}**")
+
+        scores = calculate_scores(responses)
+        st.subheader("🔢 Your Category Scores")
+        st.write(scores)
+
+        # Choose dataset
+        if inclination == "STEM":
+            report_df = stem_df
+        elif inclination == "ARTS":
+            report_df = arts_df
+        else:
+            report_df = humanities_df
+
+        # Match top categories
+        top_categories = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:2]
+        top_roles = report_df[report_df["Category"].isin([c[0] for c in top_categories])]
+
+        st.subheader("🎯 Suggested Careers & Role Types")
+        st.dataframe(top_roles.reset_index(drop=True))
+
